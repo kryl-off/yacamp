@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from moderation_service import ModerationService
+from contextAnalyzerService import ModerationService
 import logging
 
 logging.basicConfig(
