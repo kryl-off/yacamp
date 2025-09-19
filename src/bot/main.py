@@ -15,6 +15,8 @@ PRIVATE_KEY = os.getenv('PRIVATE_KEY')
 FOLDER_ID = os.getenv('FOLDER_ID')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 MODERATION_SERVICE_URL = os.getenv('MODERATION_SERVICE_URL')
+PRECHECK_SERVICE_URL = os.getenv("PRECHECK_SERVICE_URL")
+
 
 
 
@@ -25,7 +27,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class YandexGPTBot
+class YandexGPTBot:
     def __init__(self):
         self.iam_token = None
         self.token_expires = 0
@@ -115,7 +117,18 @@ class YandexGPTBot
             raise
 
 
-yandex_bot = YandexGPTBot():
+yandex_bot = YandexGPTBot()
+
+def precheck_text(text: str) -> bool:
+    """Запрос к PreCheck сервису для проверки регулярками"""
+    try:
+        response = requests.post(f"{PRECHECK_SERVICE_URL}/precheck", json={"text": text}, timeout=5)
+        response.raise_for_status()
+        return response.json().get("malicious", False)
+    except Exception as e:
+        logger.error(f"Ошибка PreCheck: {str(e)}. Пропускаем проверку.")
+        return False  # fail-safe
+
 
 def check_malicious(text: str) -> bool:
     """Запрос на модератор-сервис"""
@@ -136,7 +149,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка текстовых сообщений"""
     user_message = update.message.text
 
     if not user_message.strip():
@@ -149,8 +161,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if precheck_text(user_message):
+        await update.message.reply_text(
+            'Ваш запрос заблокирован на этапе предварительной проверки.'
+        )
+        return
+
+    if check_malicious(user_message):
+        await update.message.reply_text(
+            'Ваш запрос не может быть обработан по соображениям безопасности.'
+        )
+        return
+
     try:
-        # Показываем статус "печатает"
         await context.bot.send_chat_action(
             chat_id=update.effective_chat.id,
             action="typing"
@@ -164,6 +187,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'Извините, произошла ошибка при обработке вашего запроса. '
             'Пожалуйста, попробуйте позже.'
         )
+
 
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
